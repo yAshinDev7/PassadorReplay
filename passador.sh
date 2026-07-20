@@ -142,6 +142,14 @@ transferir_para_outro_celular() {
         return 1
     fi
 
+    # Garante a identificacao do celular principal
+    LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
+    if [ -z "$LOCAL_DEV" ]; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Celular principal desconectado do ADB."
+        read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
+        return 1
+    fi
+
     echo -n -e "\n ${BOLD}${YELLOW}Digite o IP e Porta do celular que vai RECEBER (ex: 192.168.0.5:43511): ${RESET}"
     read -r ALVO_IP < /dev/tty
 
@@ -155,48 +163,60 @@ transferir_para_outro_celular() {
     $ADB_BIN connect "$ALVO_IP"
     sleep 2
 
-    # Verifica se o alvo realmente conectou no servidor ADB local
     if ! $ADB_BIN devices | grep -q "$ALVO_IP"; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nao foi possivel conectar ao celular alvo. Verifique se o ADB sem fio dele esta ativo."
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nao foi possivel conectar ao celular alvo. Verifique o ADB sem fio dele.${RESET}"
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    # Define as pastas de origem (deste celular) e destino (do celular remoto) baseado na escolha
     if [ "$SUB_OPT" -eq 1 ]; then
-        # Meu FF Max para o FF Normal dele
         PASTA_LOCAL="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
         VERSAO_ALVO="1.123.15"
         TIPO_OP="Seu Max -> Normal Dele"
     else
-        # Meu FF Normal para o FF Max dele
         PASTA_LOCAL="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
         VERSAO_ALVO="2.124.15"
         TIPO_OP="Seu Normal -> Max Dele"
     fi
 
-    echo -e "${GRAY} -> Coletando replays deste aparelho...${RESET}"
+    echo -e "${GRAY} -> Puxando replays direto da pasta do jogo...${RESET}"
     
-    # Baixa temporariamente os arquivos bin/json do celular atual para o Termux
     mkdir -p ./tmp_replays 2>/dev/null
-    rm -f ./tmp_replays/* 2>/dev/null
-    
-    # Copia os arquivos bin/json do celular local para o Termux intermediário
-    $ADB_BIN -s "$ADB_DEVICE" pull "$PASTA_LOCAL/." ./tmp_replays/ 2>/dev/null
+    rm -rf ./tmp_replays/* 2>/dev/null
 
-    COUNT=$(find ./tmp_replays -name "*.bin" 2>/dev/null | wc -l)
+    # Lista os arquivos direto da pasta do jogo no celular principal
+    ARQUIVOS=$($ADB_BIN -s "$LOCAL_DEV" shell "ls $PASTA_LOCAL" 2>/dev/null | tr -d '\r')
+
+    if [ -z "$ARQUIVOS" ]; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo encontrado direto na pasta do Free Fire."
+        echo -e " ${GRAY}Caminho verificado: $PASTA_LOCAL${RESET}"
+        rm -rf ./tmp_replays
+        $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
+        read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
+        return 1
+    fi
+
+    # Puxa arquivo por arquivo direto da pasta do jogo usando o ADB do celular local
+    for arquivo in $ARQUIVOS; do
+        if [[ "$arquivo" == *".bin"* || "$arquivo" == *".BIN"* || "$arquivo" == *".json"* || "$arquivo" == *".JSON"* ]]; then
+            $ADB_BIN -s "$LOCAL_DEV" pull "$PASTA_LOCAL/$arquivo" "./tmp_replays/$arquivo" >/dev/null 2>&1
+        fi
+    done
+
+    # Busca no Termux ignorando maiusculas/minusculas
+    COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
 
     if [ "$COUNT" -eq 0 ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin de replay encontrado no seu celular."
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Falha ao transferir arquivos da pasta original para o Termux."
         rm -rf ./tmp_replays
+        $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
     echo -e "${GRAY} -> Modificando compatibilidade de versao...${RESET}"
-    # Corrige a versão nas strings json localmente no Termux antes do envio
     for f in ./tmp_replays/*.json; do
         if [ -f "$f" ]; then
             sed -i 's/"[Vv]ersion":"[^"]*"/"Version":"'"$VERSAO_ALVO"'"/' "$f" 2>/dev/null
@@ -204,18 +224,15 @@ transferir_para_outro_celular() {
     done
 
     echo -e "${GRAY} -> Enviando arquivos para o celular alvo...${RESET}"
-    # Garante que a pasta destino existe no celular remoto e envia os replays modificados
     $ADB_BIN -s "$ALVO_IP" shell "mkdir -p $PASTA_REMOTA 2>/dev/null"
     $ADB_BIN -s "$ALVO_IP" push ./tmp_replays/. "$PASTA_REMOTA/" 2>/dev/null
 
-    # Coleta os dados de hardware do celular alvo para exibir no resumo
     BRAND=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
     MODEL=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.product.model" | tr -d '\r')
     ANDROID=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.build.version.release" | tr -d '\r')
     BATT=$($ADB_BIN -s "$ALVO_IP" shell "dumpsys battery | grep level | awk '{print \$2}'" | tr -d '\r')
     NOW=$(date +"%d/%m/%Y %H:%M")
 
-    # Limpa o lixo temporário criado no Termux
     rm -rf ./tmp_replays
 
     clear
@@ -224,29 +241,29 @@ transferir_para_outro_celular() {
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}RESUMO DA OPERACAO${RESET}"
     echo -e " "
-    echo -e "  Replays enviados   : ${WHITE}$COUNT${RESET}"
-    echo -e "  Celular Destino    : ${WHITE}$ALVO_IP${RESET}"
-    echo -e "  Data/Hora          : ${WHITE}$NOW${RESET}"
-    echo -e "  Status             : ${GREEN}ENVIADO COM SUCESSO${RESET}"
+    echo -e "  Replays encontrados : ${WHITE}$COUNT${RESET}"
+    echo -e "  Replays enviados    : ${WHITE}$COUNT${RESET}"
+    echo -e "  Celular Destino     : ${WHITE}$ALVO_IP${RESET}"
+    echo -e "  Data/Hora           : ${WHITE}$NOW${RESET}"
+    echo -e "  Status              : ${GREEN}ENVIADO COM SUCESSO${RESET}"
     echo -e " "
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}INFORMACOES DO CELULAR SECUNDARIO (ALVO)${RESET}"
     echo -e " "
-    echo -e "  Marca              : ${WHITE}$BRAND${RESET}"
-    echo -e "  Modelo             : ${WHITE}$MODEL${RESET}"
-    echo -e "  Versao Android     : ${WHITE}$ANDROID${RESET}"
-    echo -e "  Nivel da Bateria   : ${WHITE}${BATT}%${RESET}"
+    echo -e "  Marca               : ${WHITE}$BRAND${RESET}"
+    echo -e "  Modelo              : ${WHITE}$MODEL${RESET}"
+    echo -e "  Versao Android      : ${WHITE}$ANDROID${RESET}"
+    echo -e "  Nivel da Bateria    : ${WHITE}${BATT}%${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e " "
     echo -e "  ${BOLD}yAshinDev${RESET}"
     echo -e " "
     
-    # Desconecta o celular secundário para não poluir os comandos locais posteriores
     $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- 4. VALIDAÇÃO INICIAL DO ADB ---
+# --- 4. VALIDAÇÃO INICIAL DO ADB (Abre direto aqui) ---
 conectar_adb
 
 # --- 5. LOOP DO MENU PRINCIPAL ---
