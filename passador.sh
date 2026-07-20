@@ -68,26 +68,27 @@ conectar_adb() {
     done
 }
 
-# --- FUNÇÃO 2: TRANSFERÊNCIA LOCAL (MAX -> NORMAL NO MESMO APARELHO) ---
+# --- FUNÇÃO 2: TRANSFERÊNCIA LOCAL ---
 transferir_max_normal() {
     echo -e "\n${GRAY} -> Transferindo arquivos...${RESET}"
     
-    CMD_VERIFICA="[ -d /sdcard/Download/MReplays ] && echo 'OK' || echo 'ERRO'"
+    PASTA_ORIGEM="/storage/emulated/0/Download/MReplays"
+    CMD_VERIFICA="[ -d $PASTA_ORIGEM ] && echo 'OK' || echo 'ERRO'"
     
     CHECK_PASTA=$($ADB_BIN -s "$ADB_DEVICE" shell "$CMD_VERIFICA" | tr -d '\r')
     if [ "$CHECK_PASTA" != "OK" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} A pasta /sdcard/Download/MReplays nao existe no seu celular."
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} A pasta $PASTA_ORIGEM nao existe no seu celular."
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
     $ADB_BIN -s "$ADB_DEVICE" shell "mkdir -p /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays 2>/dev/null"
-    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f /sdcard/Download/MReplays/*.bin /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
-    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f /sdcard/Download/MReplays/*.json /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f $PASTA_ORIGEM/*.bin /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f $PASTA_ORIGEM/*.json /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
     
     $ADB_BIN -s "$ADB_DEVICE" shell "for f in /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.123.15\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
 
-    COUNT=$($ADB_BIN -s "$ADB_DEVICE" shell "find /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays -name '*.bin' 2>/dev/null | wc -l" | tr -d '\r')
+    COUNT=$($ADB_BIN -s "$ADB_DEVICE" shell "find /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays -iname '*.bin' 2>/dev/null | wc -l" | tr -d '\r')
     BRAND=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
     MODEL=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.product.model" | tr -d '\r')
     ANDROID=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.build.version.release" | tr -d '\r')
@@ -98,7 +99,7 @@ transferir_max_normal() {
 
     clear
     echo -e " "
-    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (Download/MReplays -> Normal)${RESET}"
+    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (MReplays -> Normal)${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}RESUMO DA OPERACAO${RESET}"
     echo -e " "
@@ -124,14 +125,14 @@ transferir_max_normal() {
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- FUNÇÃO 3: TRANSFERÊNCIA EXTERNA (CELULAR PARA OUTRO CELULAR) ---
+# --- FUNÇÃO 3: TRANSFERÊNCIA EXTERNA (PARA OUTRO CELULAR) ---
 transferir_para_outro_celular() {
     clear
     echo -e "${BLUE}==============================================${RESET}"
     echo -e "      ${BOLD}${WHITE}ENVIAR REPLAY PARA OUTRO CELULAR${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e "  ${BLUE}[ 1 ]${RESET} ${WHITE}SEU FF MAX PARA FF NORMAL DELE${RESET}"
-    echo -e "  ${BLUE}[ 2 ]${RESET} ${WHITE}SEU FF NORMAL PARA FF MAX DELE${RESET}"
+    echo -e "  ${BLUE}[ 1 ]${RESET} ${WHITE}MREPLAYS PARA FF NORMAL DELE${RESET}"
+    echo -e "  ${BLUE}[ 2 ]${RESET} ${WHITE}MREPLAYS PARA FF MAX DELE${RESET}"
     echo -e "  ${BLUE}[ 3 ]${RESET} Voltar ao Menu Principal"
     echo -e "${BLUE}==============================================${RESET}"
     echo -n -e " ${BOLD}${WHITE}> ${RESET}"
@@ -147,9 +148,8 @@ transferir_para_outro_celular() {
         return 1
     fi
 
-    PASTA_ORIGEM="/sdcard/Download/MReplays"
+    PASTA_ORIGEM="/storage/emulated/0/Download/MReplays"
 
-    # Confirma se a pasta /sdcard/Download/MReplays existe no aparelho principal
     CHECK_ORIGEM=$($ADB_BIN -s "$ADB_DEVICE" shell "[ -d $PASTA_ORIGEM ] && echo 'OK' || echo 'ERRO'" | tr -d '\r')
     if [ "$CHECK_ORIGEM" != "OK" ]; then
         echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} A pasta $PASTA_ORIGEM nao existe no seu celular."
@@ -179,11 +179,11 @@ transferir_para_outro_celular() {
     if [ "$SUB_OPT" -eq 1 ]; then
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
         VERSAO_ALVO="1.123.15"
-        TIPO_OP="Seu Max -> Normal Dele"
+        TIPO_OP="MReplays -> Normal Dele"
     else
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
         VERSAO_ALVO="2.124.15"
-        TIPO_OP="Seu Normal -> Max Dele"
+        TIPO_OP="MReplays -> Max Dele"
     fi
 
     echo -e "${GRAY} -> Puxando replays de $PASTA_ORIGEM...${RESET}"
@@ -191,7 +191,6 @@ transferir_para_outro_celular() {
     mkdir -p ./tmp_replays 2>/dev/null
     rm -rf ./tmp_replays/* 2>/dev/null
 
-    # Puxa diretamente da pasta Download/MReplays do celular principal para o Termux
     $ADB_BIN -s "$ADB_DEVICE" pull "$PASTA_ORIGEM/." ./tmp_replays/ >/dev/null 2>&1
 
     COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
@@ -247,12 +246,11 @@ transferir_para_outro_celular() {
     echo -e "  ${BOLD}yAshinDev${RESET}"
     echo -e " "
     
-    # Desconecta do celular alvo para evitar interferir nas futuras operacoes locais
     $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- 4. VALIDAÇÃO INICIAL DO ADB (Ocorre apenas uma vez no inicio) ---
+# --- 4. VALIDAÇÃO INICIAL DO ADB ---
 conectar_adb
 
 # --- 5. LOOP DO MENU PRINCIPAL ---
@@ -264,7 +262,7 @@ while true; do
     echo -e " ${BOLD}${YELLOW}DISPOSITIVO LOCAL CONECTADO${RESET}"
     echo -e " device:${WHITE}${ADB_DEVICE}${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e " ${BOLD}${YELLOW}ORIGEM FIXA:${RESET} /sdcard/Download/MReplays"
+    echo -e " ${BOLD}${YELLOW}ORIGEM FIXA:${RESET} /storage/emulated/0/Download/MReplays"
     echo -e " ${BOLD}${YELLOW}VERSÃO FF MAX:${RESET} 2.124.15"
     echo -e " ${BOLD}${YELLOW}VERSÃO FF:${RESET} 1.123.15"
     echo -e "${BLUE}==============================================${RESET}"
