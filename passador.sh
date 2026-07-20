@@ -16,12 +16,12 @@ clear
 
 # --- FUNÇÃO 1: VERIFICAÇÃO E CONEXÃO DO ADB LOCAL ---
 conectar_adb() {
-    while true; do
-        if $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
-            ADB_DEVICE=$($ADB_BIN devices | grep -v "List" | head -n 1 | awk '{print $1}')
-            return 0
-        fi
+    if $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
+        ADB_DEVICE=$($ADB_BIN devices | grep -v "List" | head -n 1 | awk '{print $1}')
+        return 0
+    fi
 
+    while true; do
         clear
         echo -e "${BLUE}==============================================${RESET}"
         echo -e "         ${BOLD}${WHITE}yAshinDev REPLAY TOOL${RESET}"
@@ -60,6 +60,11 @@ conectar_adb() {
                 sleep 1
                 ;;
         esac
+
+        if $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
+            ADB_DEVICE=$($ADB_BIN devices | grep -v "List" | head -n 1 | awk '{print $1}')
+            break
+        fi
     done
 }
 
@@ -67,33 +72,33 @@ conectar_adb() {
 transferir_max_normal() {
     echo -e "\n${GRAY} -> Transferindo arquivos...${RESET}"
     
-    CMD_VERIFICA="[ -d /storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays ] && echo 'OK' || echo 'ERRO'"
+    CMD_VERIFICA="[ -d /sdcard/Download/MReplays ] && echo 'OK' || echo 'ERRO'"
     
-    CHECK_PASTA=$($ADB_BIN shell "$CMD_VERIFICA" | tr -d '\r')
+    CHECK_PASTA=$($ADB_BIN -s "$ADB_DEVICE" shell "$CMD_VERIFICA" | tr -d '\r')
     if [ "$CHECK_PASTA" != "OK" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Pasta do Free Fire Max nao encontrada."
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} A pasta /sdcard/Download/MReplays nao existe no seu celular."
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    $ADB_BIN shell "mkdir -p /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays 2>/dev/null"
-    $ADB_BIN shell "cp -f /storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays/*.bin /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
-    $ADB_BIN shell "cp -f /storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays/*.json /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "mkdir -p /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f /sdcard/Download/MReplays/*.bin /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "cp -f /sdcard/Download/MReplays/*.json /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/ 2>/dev/null"
     
-    $ADB_BIN shell "for f in /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.123.15\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
+    $ADB_BIN -s "$ADB_DEVICE" shell "for f in /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.123.15\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
 
-    COUNT=$($ADB_BIN shell "find /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays -name '*.bin' 2>/dev/null | wc -l" | tr -d '\r')
-    BRAND=$($ADB_BIN shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
-    MODEL=$($ADB_BIN shell "getprop ro.product.model" | tr -d '\r')
-    ANDROID=$($ADB_BIN shell "getprop ro.build.version.release" | tr -d '\r')
-    BATT=$($ADB_BIN shell "dumpsys battery | grep level | awk '{print \$2}'" | tr -d '\r')
-    FREE_STORAGE=$($ADB_BIN shell "df -h /data 2>/dev/null | awk 'NR==2 {print \$4}'" | tr -d '\r')
-    FREE_RAM=$($ADB_BIN shell "cat /proc/meminfo 2>/dev/null | grep MemAvailable | awk '{printf \"%.2f\", \$2/1024/1024}'" | tr -d '\r')
+    COUNT=$($ADB_BIN -s "$ADB_DEVICE" shell "find /storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays -name '*.bin' 2>/dev/null | wc -l" | tr -d '\r')
+    BRAND=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
+    MODEL=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.product.model" | tr -d '\r')
+    ANDROID=$($ADB_BIN -s "$ADB_DEVICE" shell "getprop ro.build.version.release" | tr -d '\r')
+    BATT=$($ADB_BIN -s "$ADB_DEVICE" shell "dumpsys battery | grep level | awk '{print \$2}'" | tr -d '\r')
+    FREE_STORAGE=$($ADB_BIN -s "$ADB_DEVICE" shell "df -h /data 2>/dev/null | awk 'NR==2 {print \$4}'" | tr -d '\r')
+    FREE_RAM=$($ADB_BIN -s "$ADB_DEVICE" shell "cat /proc/meminfo 2>/dev/null | grep MemAvailable | awk '{printf \"%.2f\", \$2/1024/1024}'" | tr -d '\r')
     NOW=$(date +"%d/%m/%Y %H:%M")
 
     clear
     echo -e " "
-    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (Max -> Normal)${RESET}"
+    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (Download/MReplays -> Normal)${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}RESUMO DA OPERACAO${RESET}"
     echo -e " "
@@ -142,10 +147,12 @@ transferir_para_outro_celular() {
         return 1
     fi
 
-    # Garante a identificacao do celular principal
-    LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
-    if [ -z "$LOCAL_DEV" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Celular principal desconectado do ADB."
+    PASTA_ORIGEM="/sdcard/Download/MReplays"
+
+    # Confirma se a pasta /sdcard/Download/MReplays existe no aparelho principal
+    CHECK_ORIGEM=$($ADB_BIN -s "$ADB_DEVICE" shell "[ -d $PASTA_ORIGEM ] && echo 'OK' || echo 'ERRO'" | tr -d '\r')
+    if [ "$CHECK_ORIGEM" != "OK" ]; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} A pasta $PASTA_ORIGEM nao existe no seu celular."
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
@@ -159,65 +166,46 @@ transferir_para_outro_celular() {
         return 1
     fi
 
-    echo -e "\n${GRAY} -> Emparelhando com o celular alvo...${RESET}"
+    echo -e "\n${GRAY} -> Emparelhando com o celular alvo ($ALVO_IP)...${RESET}"
     $ADB_BIN connect "$ALVO_IP"
     sleep 2
 
     if ! $ADB_BIN devices | grep -q "$ALVO_IP"; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nao foi possivel conectar ao celular alvo. Verifique o ADB sem fio dele.${RESET}"
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nao foi possivel conectar ao celular alvo. Verifique o ADB sem fio dele."
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
     if [ "$SUB_OPT" -eq 1 ]; then
-        PASTA_LOCAL="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
         VERSAO_ALVO="1.123.15"
         TIPO_OP="Seu Max -> Normal Dele"
     else
-        PASTA_LOCAL="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
         VERSAO_ALVO="2.124.15"
         TIPO_OP="Seu Normal -> Max Dele"
     fi
 
-    echo -e "${GRAY} -> Puxando replays direto da pasta do jogo...${RESET}"
+    echo -e "${GRAY} -> Puxando replays de $PASTA_ORIGEM...${RESET}"
     
     mkdir -p ./tmp_replays 2>/dev/null
     rm -rf ./tmp_replays/* 2>/dev/null
 
-    # Lista os arquivos direto da pasta do jogo no celular principal
-    ARQUIVOS=$($ADB_BIN -s "$LOCAL_DEV" shell "ls $PASTA_LOCAL" 2>/dev/null | tr -d '\r')
+    # Puxa diretamente da pasta Download/MReplays do celular principal para o Termux
+    $ADB_BIN -s "$ADB_DEVICE" pull "$PASTA_ORIGEM/." ./tmp_replays/ >/dev/null 2>&1
 
-    if [ -z "$ARQUIVOS" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo encontrado direto na pasta do Free Fire."
-        echo -e " ${GRAY}Caminho verificado: $PASTA_LOCAL${RESET}"
-        rm -rf ./tmp_replays
-        $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
-        read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
-        return 1
-    fi
-
-    # Puxa arquivo por arquivo direto da pasta do jogo usando o ADB do celular local
-    for arquivo in $ARQUIVOS; do
-        if [[ "$arquivo" == *".bin"* || "$arquivo" == *".BIN"* || "$arquivo" == *".json"* || "$arquivo" == *".JSON"* ]]; then
-            $ADB_BIN -s "$LOCAL_DEV" pull "$PASTA_LOCAL/$arquivo" "./tmp_replays/$arquivo" >/dev/null 2>&1
-        fi
-    done
-
-    # Busca no Termux ignorando maiusculas/minusculas
     COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
 
     if [ "$COUNT" -eq 0 ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Falha ao transferir arquivos da pasta original para o Termux."
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado em $PASTA_ORIGEM."
         rm -rf ./tmp_replays
         $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    echo -e "${GRAY} -> Modificando compatibilidade de versao...${RESET}"
-    for f in ./tmp_replays/*.json; do
+    echo -e "${GRAY} -> Modificando compatibilidade de versao dos JSONs...${RESET}"
+    for f in ./tmp_replays/*.json ./tmp_replays/*.JSON; do
         if [ -f "$f" ]; then
             sed -i 's/"[Vv]ersion":"[^"]*"/"Version":"'"$VERSAO_ALVO"'"/' "$f" 2>/dev/null
         fi
@@ -259,21 +247,16 @@ transferir_para_outro_celular() {
     echo -e "  ${BOLD}yAshinDev${RESET}"
     echo -e " "
     
+    # Desconecta do celular alvo para evitar interferir nas futuras operacoes locais
     $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- 4. VALIDAÇÃO INICIAL DO ADB (Abre direto aqui) ---
+# --- 4. VALIDAÇÃO INICIAL DO ADB (Ocorre apenas uma vez no inicio) ---
 conectar_adb
 
 # --- 5. LOOP DO MENU PRINCIPAL ---
 while true; do
-    if ! $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
-        echo -e "\n${BOLD}${WHITE}[!] Conexao ADB local perdida! Reestabelecendo...${RESET}"
-        sleep 1
-        conectar_adb
-    fi
-
     clear
     echo -e "${BLUE}==============================================${RESET}"
     echo -e " ${BOLD}${GREEN}PASSADOR DE REPLAY BY yAshinDev${RESET}"
@@ -281,11 +264,12 @@ while true; do
     echo -e " ${BOLD}${YELLOW}DISPOSITIVO LOCAL CONECTADO${RESET}"
     echo -e " device:${WHITE}${ADB_DEVICE}${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
+    echo -e " ${BOLD}${YELLOW}ORIGEM FIXA:${RESET} /sdcard/Download/MReplays"
     echo -e " ${BOLD}${YELLOW}VERSÃO FF MAX:${RESET} 2.124.15"
     echo -e " ${BOLD}${YELLOW}VERSÃO FF:${RESET} 1.123.15"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e " ${BLUE}[ 1 ]${RESET} ${WHITE}FREE FIRE MAX PARA NORMAL (Local)${RESET}"
-    echo -e " ${BLUE}[ 2 ]${RESET} ${WHITE}FREE FIRE NORMAL PARA MAX (Local)${RESET}"
+    echo -e " ${BLUE}[ 1 ]${RESET} ${WHITE}MREPLAYS PARA FF NORMAL (Local)${RESET}"
+    echo -e " ${BLUE}[ 2 ]${RESET} ${WHITE}MREPLAYS PARA FF MAX (Local)${RESET}"
     echo -e " ${BLUE}[ 3 ]${RESET} ${WHITE}PASSAR PARA OUTRO CELULAR (Rede/Wireless)${RESET}"
     echo -e " ${BLUE}[ 4 ]${RESET} ${WHITE}SAIR DO MENU${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
