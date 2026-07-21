@@ -66,6 +66,26 @@ versao_remota() {
     $ADB_BIN -s "$serial" shell "dumpsys package $pkg" 2>/dev/null | extrair_version_name
 }
 
+# --- FUNCAO: DIAGNOSTICO DETALHADO (mostra o que o su realmente ve) ---
+diagnosticar_pasta() {
+    local caminho="$1"
+    echo -e "\n${GRAY}--- DIAGNOSTICO ---${RESET}"
+
+    echo -e "${GRAY}Testando acesso root basico:${RESET}"
+    su -c "id" 2>&1
+
+    echo -e "\n${GRAY}Conteudo de: /storage/emulated/0/Android/data/com.dts.freefiremax/files/ ${RESET}"
+    su -c "ls -la '/storage/emulated/0/Android/data/com.dts.freefiremax/files/' 2>&1"
+
+    echo -e "\n${GRAY}Conteudo de: $caminho ${RESET}"
+    su -c "ls -la '$caminho' 2>&1"
+
+    echo -e "\n${GRAY}Busca recursiva por *.bin dentro da pasta do FF Max: ${RESET}"
+    su -c "find '/storage/emulated/0/Android/data/com.dts.freefiremax/files/' -iname '*.bin' 2>&1"
+
+    echo -e "${GRAY}-------------------${RESET}"
+}
+
 # --- FUNCAO: COPIA DIRETA VIA ROOT ENTRE DUAS PASTAS DO MESMO APARELHO ---
 # Espelha exatamente a logica do script original (cp direto com su),
 # sem passar pelo Termux em nenhum momento.
@@ -79,8 +99,9 @@ copiar_local_root() {
     fi
 
     su -c "mkdir -p '$dst'" 2>/dev/null
-    su -c "cp -f '$src'/*.bin '$dst'/ 2>/dev/null"
-    su -c "cp -f '$src'/*.json '$dst'/ 2>/dev/null"
+    # busca recursiva, caso os replays estejam em subpastas dentro de MReplays
+    su -c "find '$src' -type f -iname '*.bin' -exec cp -f {} '$dst'/ \;" 2>/dev/null
+    su -c "find '$src' -type f -iname '*.json' -exec cp -f {} '$dst'/ \;" 2>/dev/null
 
     su -c "find '$dst' -iname '*.bin' 2>/dev/null | wc -l"
 }
@@ -131,6 +152,7 @@ transferir_local_direcao() {
     if [ -z "$COUNT" ] || [ "$COUNT" -eq 0 ] 2>/dev/null; then
         echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado em:"
         echo -e "  ${WHITE}$src${RESET}"
+        diagnosticar_pasta "$src"
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
