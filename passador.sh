@@ -53,58 +53,22 @@ buscar_via_root() {
     return 1
 }
 
-# --- FUNCAO: BUSCA VIA ADB PULL (usa o shell do proprio adb, que tem
-#     acesso a Android/data mesmo sem root no app) ---
-buscar_via_adb_pull() {
-    local DEV="$1"   # serial/ip do dispositivo LOCAL (o mesmo aparelho)
-
-    for pasta in "${LOCAIS_BUSCA[@]}"; do
-        # verifica existencia da pasta pelo proprio adb shell
-        if $ADB_BIN -s "$DEV" shell "[ -d '$pasta' ] && echo OK" 2>/dev/null | grep -q OK; then
-            $ADB_BIN -s "$DEV" pull "$pasta" ./tmp_replays_pull >/dev/null 2>&1
-
-            # o adb pull cria uma subpasta com o nome de origem; normaliza
-            if [ -d "./tmp_replays_pull" ]; then
-                mv ./tmp_replays_pull/*/* ./tmp_replays/ 2>/dev/null
-                mv ./tmp_replays_pull/* ./tmp_replays/ 2>/dev/null
-                rm -rf ./tmp_replays_pull
-            fi
-
-            QTD=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
-            if [ "$QTD" -gt 0 ]; then
-                echo "$pasta"
-                return 0
-            else
-                rm -rf ./tmp_replays/* 2>/dev/null
-            fi
-        fi
-    done
-    echo ""
-    return 1
-}
-
-# --- FUNCAO PRINCIPAL DE BUSCA: TENTA ROOT, DEPOIS ADB PULL ---
-# Recebe como parametro o serial/ip do dispositivo LOCAL (necessario para o
-# fallback via adb pull). Se root funcionar, esse parametro nem eh usado.
+# --- FUNCAO PRINCIPAL DE BUSCA: SOMENTE VIA ROOT ---
+# A leitura dos replays no aparelho local eh feita exclusivamente com su.
+# O adb soh entra depois, para ENVIAR os arquivos ja copiados.
 buscar_e_copiar_replays() {
-    local DEV_LOCAL="$1"
-
     mkdir -p ./tmp_replays 2>/dev/null
     rm -rf ./tmp_replays/* 2>/dev/null
 
-    PASTA_ENCONTRADA=""
-
-    if tem_root; then
-        echo -e "${GRAY} -> Root detectado, buscando replays via su...${RESET}" >&2
-        PASTA_ENCONTRADA=$(buscar_via_root)
+    if ! tem_root; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Acesso root nao detectado neste aparelho." >&2
+        echo -e " ${GRAY}Este script le os replays usando 'su'. Conceda root ao Termux e tente novamente.${RESET}" >&2
+        echo ""
+        return 1
     fi
 
-    if [ -z "$PASTA_ENCONTRADA" ] && [ -n "$DEV_LOCAL" ]; then
-        echo -e "${GRAY} -> Buscando replays via adb pull...${RESET}" >&2
-        PASTA_ENCONTRADA=$(buscar_via_adb_pull "$DEV_LOCAL")
-    fi
-
-    echo "$PASTA_ENCONTRADA"
+    echo -e "${GRAY} -> Buscando replays via root (su)...${RESET}" >&2
+    buscar_via_root
 }
 
 # --- FUNCAO 1: CONEXAO ADB LOCAL ---
@@ -152,11 +116,11 @@ conectar_adb_local() {
 # --- FUNCAO 2: TRANSFERENCIA LOCAL (NO MESMO CELULAR) ---
 transferir_local() {
     conectar_adb_local
-    echo -e "\n${GRAY} -> Buscando replays nas pastas do sistema...${RESET}"
+    echo -e "\n${GRAY} -> Buscando replays nas pastas do sistema (via root)...${RESET}"
 
     LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
 
-    ORIGEM=$(buscar_e_copiar_replays "$LOCAL_DEV")
+    ORIGEM=$(buscar_e_copiar_replays)
 
     if [ -z "$ORIGEM" ]; then
         echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado nas pastas do sistema."
@@ -236,14 +200,11 @@ transferir_para_outro_celular() {
         return 1
     fi
 
-    conectar_adb_local
-    LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
+    echo -e "\n${GRAY} -> Escaneando pastas do celular em busca dos replays (via root)...${RESET}"
 
-    echo -e "\n${GRAY} -> Escaneando pastas do celular em busca dos replays...${RESET}"
-
-    # 1. Varre os diretorios (via root ou via adb pull) e copia os replays
-    #    encontrados para a memoria do Termux
-    ORIGEM_ENCONTRADA=$(buscar_e_copiar_replays "$LOCAL_DEV")
+    # 1. Varre os diretorios via root e copia os replays encontrados para a
+    #    memoria do Termux. O adb soh sera usado depois, para ENVIAR.
+    ORIGEM_ENCONTRADA=$(buscar_e_copiar_replays)
 
     COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
 
@@ -350,7 +311,7 @@ while true; do
     echo -e "${BLUE}==============================================${RESET}"
     echo -e " ${BOLD}${GREEN}PASSADOR DE REPLAY BY yAshinDev${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e " ${BOLD}${YELLOW}MODO DE BUSCA:${RESET} Automatica (root -> adb pull, Downloads / FF / FF Max)"
+    echo -e " ${BOLD}${YELLOW}MODO DE BUSCA:${RESET} Automatica via ROOT (Downloads / FF / FF Max)"
     echo -e " ${BOLD}${YELLOW}VERSAO FF MAX:${RESET} 2.124.15"
     echo -e " ${BOLD}${YELLOW}VERSAO FF:${RESET} 1.123.15"
     echo -e "${BLUE}==============================================${RESET}"
