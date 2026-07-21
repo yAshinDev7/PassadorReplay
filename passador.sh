@@ -1,10 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-# --- 1. GARANTE PERMISSÃO DE ROOT NO CELULAR PRINCIPAL ---
-if [ "$(id -u)" -ne 0 ]; then
-    exec su -c "bash $0 $@"
-fi
-
 # --- PALETA DE CORES ---
 RESET="\033[0m"
 BOLD="\033[1m"
@@ -16,86 +11,191 @@ GRAY="\033[1;30m"
 
 ADB_BIN="/data/data/com.termux/files/usr/bin/adb"
 
-# --- LOCAIS DE BUSCA DE REPLAYS COM ROOT ---
+# LISTA DE TODAS AS PASTAS POSSIVEIS DE ORIGEM
 LOCAIS_BUSCA=(
-    "/sdcard/Android/data/com.dts.freefiremax/files/MReplays"
-    "/sdcard/Android/data/com.dts.freefireth/files/MReplays"
-    "/sdcard/Download/MReplays"
     "/storage/emulated/0/Download/MReplays"
+    "/sdcard/Download/MReplays"
+    "/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
+    "/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
 )
 
-# --- FUNÇÃO DE EXTRAÇÃO LOCAL ---
-extrair_replays_locais() {
-    rm -rf ./tmp_replays 2>/dev/null
-    mkdir -p ./tmp_replays
+clear
 
-    PASTA_ACHADA=""
+# --- FUNCAO: TESTA SE TEMOS ACESSO ROOT REAL ---
+tem_root() {
+    if command -v su >/dev/null 2>&1; then
+        su -c "id" 2>/dev/null | grep -q "uid=0"
+        return $?
+    fi
+    return 1
+}
 
+# --- FUNCAO: BUSCA VIA ROOT (su + cp) ---
+buscar_via_root() {
     for pasta in "${LOCAIS_BUSCA[@]}"; do
-        if [ -d "$pasta" ]; then
-            cp -rf "$pasta"/* ./tmp_replays/ 2>/dev/null
-            
+        # -d com su precisa ser testado dentro do su, pois o Termux normal
+        # pode nao "ver" a pasta mesmo que ela exista
+        if su -c "[ -d '$pasta' ] && echo OK" 2>/dev/null | grep -q OK; then
+            su -c "cp -r '$pasta'/* '$PWD/tmp_replays/' " 2>/dev/null
+            # ajusta dono/permissao para o Termux conseguir ler/mover os arquivos copiados
+            su -c "chmod -R 777 '$PWD/tmp_replays/'" 2>/dev/null
+
             QTD=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
             if [ "$QTD" -gt 0 ]; then
-                PASTA_ACHADA="$pasta"
-                break
+                echo "$pasta"
+                return 0
             else
                 rm -rf ./tmp_replays/* 2>/dev/null
             fi
         fi
     done
-
-    echo "$PASTA_ACHADA"
+    echo ""
+    return 1
 }
 
-# --- FUNÇÃO 1: TRANSFERÊNCIA LOCAL (NO PRÓPRIO CELULAR) ---
+# --- FUNCAO: BUSCA VIA ADB PULL (usa o shell do proprio adb, que tem
+#     acesso a Android/data mesmo sem root no app) ---
+buscar_via_adb_pull() {
+    local DEV="$1"   # serial/ip do dispositivo LOCAL (o mesmo aparelho)
+
+    for pasta in "${LOCAIS_BUSCA[@]}"; do
+        # verifica existencia da pasta pelo proprio adb shell
+        if $ADB_BIN -s "$DEV" shell "[ -d '$pasta' ] && echo OK" 2>/dev/null | grep -q OK; then
+            $ADB_BIN -s "$DEV" pull "$pasta" ./tmp_replays_pull >/dev/null 2>&1
+
+            # o adb pull cria uma subpasta com o nome de origem; normaliza
+            if [ -d "./tmp_replays_pull" ]; then
+                mv ./tmp_replays_pull/*/* ./tmp_replays/ 2>/dev/null
+                mv ./tmp_replays_pull/* ./tmp_replays/ 2>/dev/null
+                rm -rf ./tmp_replays_pull
+            fi
+
+            QTD=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
+            if [ "$QTD" -gt 0 ]; then
+                echo "$pasta"
+                return 0
+            else
+                rm -rf ./tmp_replays/* 2>/dev/null
+            fi
+        fi
+    done
+    echo ""
+    return 1
+}
+
+# --- FUNCAO PRINCIPAL DE BUSCA: TENTA ROOT, DEPOIS ADB PULL ---
+# Recebe como parametro o serial/ip do dispositivo LOCAL (necessario para o
+# fallback via adb pull). Se root funcionar, esse parametro nem eh usado.
+buscar_e_copiar_replays() {
+    local DEV_LOCAL="$1"
+
+    mkdir -p ./tmp_replays 2>/dev/null
+    rm -rf ./tmp_replays/* 2>/dev/null
+
+    PASTA_ENCONTRADA=""
+
+    if tem_root; then
+        echo -e "${GRAY} -> Root detectado, buscando replays via su...${RESET}" >&2
+        PASTA_ENCONTRADA=$(buscar_via_root)
+    fi
+
+    if [ -z "$PASTA_ENCONTRADA" ] && [ -n "$DEV_LOCAL" ]; then
+        echo -e "${GRAY} -> Buscando replays via adb pull...${RESET}" >&2
+        PASTA_ENCONTRADA=$(buscar_via_adb_pull "$DEV_LOCAL")
+    fi
+
+    echo "$PASTA_ENCONTRADA"
+}
+
+# --- FUNCAO 1: CONEXAO ADB LOCAL ---
+conectar_adb_local() {
+    if $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
+        return 0
+    fi
+
+    while true; do
+        clear
+        echo -e "${BLUE}==============================================${RESET}"
+        echo -e "         ${BOLD}${WHITE}yAshinDev REPLAY TOOL${RESET}"
+        echo -e "${BLUE}==============================================${RESET}"
+        echo -e " ${BOLD}${YELLOW}[!] NENHUM DISPOSITIVO ADB LOCAL DETECTADO${RESET}"
+        echo -e " ${GRAY}Para operacoes locais, conecte o ADB do proprio aparelho.${RESET}"
+        echo -e "${BLUE}==============================================${RESET}"
+        echo -e " ${WHITE}Escolha uma opcao:${RESET}"
+        echo -e "  ${BLUE}[ 1 ]${RESET} Digitar IP:PORTA do celular local"
+        echo -e "  ${BLUE}[ 2 ]${RESET} Tentar novamente"
+        echo -e "  ${BLUE}[ 3 ]${RESET} Sair"
+        echo -e "${BLUE}==============================================${RESET}"
+        echo -n -e " ${BOLD}${WHITE}> ${RESET}"
+        read -r ADB_OPT < /dev/tty
+
+        case "$ADB_OPT" in
+            1)
+                echo -n -e "\n ${BOLD}${YELLOW}Digite o IP e Porta local (ex: 127.0.0.1:41081): ${RESET}"
+                read -r CONN_STR < /dev/tty
+                if [ -n "$CONN_STR" ]; then
+                    $ADB_BIN connect "$CONN_STR"
+                    sleep 2
+                fi
+                ;;
+            2) sleep 1 ;;
+            3) exit 0 ;;
+            *) echo -e " Opcao invalida." ; sleep 1 ;;
+        esac
+
+        if $ADB_BIN devices | grep -v "List of devices" | grep -q "device"; then
+            break
+        fi
+    done
+}
+
+# --- FUNCAO 2: TRANSFERENCIA LOCAL (NO MESMO CELULAR) ---
 transferir_local() {
-    start_time=$(date +%s)
-    SRC="/sdcard/Android/data/com.dts.freefiremax/files/MReplays"
-    DST="/sdcard/Android/data/com.dts.freefireth/files/MReplays"
-    VER="1.128.2"
+    conectar_adb_local
+    echo -e "\n${GRAY} -> Buscando replays nas pastas do sistema...${RESET}"
 
-    if [ ! -d "$SRC" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Pasta do FF Max nao encontrada."
-        read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
-        return 1
-    fi
+    LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
 
-    mkdir -p "$DST" 2>/dev/null
-    count=$(find "$SRC" -iname "*.bin" 2>/dev/null | wc -l)
+    ORIGEM=$(buscar_e_copiar_replays "$LOCAL_DEV")
 
-    if [ "$count" -gt 0 ]; then
-        cp -f "$SRC"/*.bin "$DST/" 2>/dev/null
-        cp -f "$SRC"/*.json "$DST/" 2>/dev/null
-        for f in "$DST"/*.json; do
-            [ -f "$f" ] && sed -i 's/"[Vv]ersion":"[^"]*"/"Version":"'"$VER"'"/' "$f" 2>/dev/null
+    if [ -z "$ORIGEM" ]; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado nas pastas do sistema."
+        echo -e " ${GRAY}Locais verificados:${RESET}"
+        for p in "${LOCAIS_BUSCA[@]}"; do
+            echo -e "  - $p"
         done
-    else
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum replay .bin foi encontrado na origem."
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    duration=$(( $(date +%s) - start_time ))
-    [ $duration -le 0 ] && duration=1
+    PASTA_DESTINO="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
 
-    BRAND=$(getprop ro.product.brand | tr '[:lower:]' '[:upper:]')
-    MODEL=$(getprop ro.product.model)
-    ANDROID=$(getprop ro.build.version.release)
-    BATT=$(dumpsys battery | grep level | awk '{print $2}')
-    FREE_STORAGE=$(df -h /data | awk 'NR==2 {print $4}')
-    FREE_RAM=$(cat /proc/meminfo | grep MemAvailable | awk '{printf "%.2f", $2/1024/1024}')
+    echo -e "${GRAY} -> Origem detectada: $ORIGEM${RESET}"
+    echo -e "${GRAY} -> Copiando para o FF Normal...${RESET}"
+
+    $ADB_BIN -s "$LOCAL_DEV" shell "mkdir -p $PASTA_DESTINO 2>/dev/null"
+    $ADB_BIN -s "$LOCAL_DEV" push ./tmp_replays/. "$PASTA_DESTINO/" 2>/dev/null
+
+    $ADB_BIN -s "$LOCAL_DEV" shell "for f in $PASTA_DESTINO/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.123.15\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
+
+    COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
+    BRAND=$($ADB_BIN -s "$LOCAL_DEV" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
+    MODEL=$($ADB_BIN -s "$LOCAL_DEV" shell "getprop ro.product.model" | tr -d '\r')
+    ANDROID=$($ADB_BIN -s "$LOCAL_DEV" shell "getprop ro.build.version.release" | tr -d '\r')
+    BATT=$($ADB_BIN -s "$LOCAL_DEV" shell "dumpsys battery | grep level | awk '{print \$2}'" | tr -d '\r')
     NOW=$(date +"%d/%m/%Y %H:%M")
+
+    rm -rf ./tmp_replays
 
     clear
     echo -e " "
-    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (Max -> Normal Local)${RESET}"
+    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL (TRANSFERENCIA LOCAL)${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}RESUMO DA OPERACAO${RESET}"
     echo -e " "
-    echo -e "  Arquivos encontrados : ${WHITE}$count${RESET}"
-    echo -e "  Replays transferidos : ${WHITE}$count${RESET}"
-    echo -e "  Tempo de execucao    : ${WHITE}${duration}s${RESET}"
+    echo -e "  Origem dos arquivos : ${WHITE}$ORIGEM${RESET}"
+    echo -e "  Replays encontrados : ${WHITE}$COUNT${RESET}"
+    echo -e "  Replays transferidos : ${WHITE}$COUNT${RESET}"
     echo -e "  Data/Hora            : ${WHITE}$NOW${RESET}"
     echo -e "  Status               : ${GREEN}CONCLUIDO${RESET}"
     echo -e " "
@@ -106,8 +206,6 @@ transferir_local() {
     echo -e "  Modelo  : ${WHITE}$MODEL${RESET}"
     echo -e "  Android : ${WHITE}$ANDROID${RESET}"
     echo -e "  Bateria : ${WHITE}${BATT}%${RESET}"
-    echo -e "  Espaco  : ${WHITE}${FREE_STORAGE}B livre${RESET}"
-    echo -e "  RAM     : ${WHITE}${FREE_RAM}GB livre${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e " "
     echo -e "  ${BOLD}yAshinDev${RESET}"
@@ -115,11 +213,11 @@ transferir_local() {
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- FUNÇÃO 2: TRANSFERÊNCIA VIA ADB PARA O OUTRO CELULAR ---
+# --- FUNCAO 3: TRANSFERENCIA EXTERNA (PARA OUTRO CELULAR) ---
 transferir_para_outro_celular() {
     clear
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e "      ${BOLD}${WHITE}ENVIAR REPLAY PARA OUTRO CELULAR (ADB)${RESET}"
+    echo -e "      ${BOLD}${WHITE}ENVIAR REPLAY PARA OUTRO CELULAR${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
     echo -e "  ${BLUE}[ 1 ]${RESET} ${WHITE}ENVIAR PARA FF NORMAL DELE${RESET}"
     echo -e "  ${BLUE}[ 2 ]${RESET} ${WHITE}ENVIAR PARA FF MAX DELE${RESET}"
@@ -128,24 +226,44 @@ transferir_para_outro_celular() {
     echo -n -e " ${BOLD}${WHITE}> ${RESET}"
     read -r SUB_OPT < /dev/tty
 
-    if [ "$SUB_OPT" -eq 3 ] 2>/dev/null; then return 0; fi
+    if [ "$SUB_OPT" -eq 3 ] 2>/dev/null; then
+        return 0
+    fi
 
-    echo -e "\n${GRAY} -> Buscando replays locais com acesso Root...${RESET}"
-    
-    PASTA_ORIGEM=$(extrair_replays_locais)
-    count=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
+    if [ "$SUB_OPT" -ne 1 ] && [ "$SUB_OPT" -ne 2 ]; then
+        echo -e "\n${BOLD}${WHITE}[!] Opcao invalida.${RESET}"
+        sleep 1
+        return 1
+    fi
 
-    if [ -z "$PASTA_ORIGEM" ] || [ "$count" -eq 0 ]; then
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado em seu celular."
+    conectar_adb_local
+    LOCAL_DEV=$($ADB_BIN devices | grep -v "List" | grep "device" | head -n 1 | awk '{print $1}')
+
+    echo -e "\n${GRAY} -> Escaneando pastas do celular em busca dos replays...${RESET}"
+
+    # 1. Varre os diretorios (via root ou via adb pull) e copia os replays
+    #    encontrados para a memoria do Termux
+    ORIGEM_ENCONTRADA=$(buscar_e_copiar_replays "$LOCAL_DEV")
+
+    COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
+
+    if [ -z "$ORIGEM_ENCONTRADA" ] || [ "$COUNT" -eq 0 ]; then
+        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nenhum arquivo .bin foi encontrado no seu aparelho."
+        echo -e " ${GRAY}Pastas verificadas pelo script:${RESET}"
+        for p in "${LOCAIS_BUSCA[@]}"; do
+            echo -e "  - $p"
+        done
         rm -rf ./tmp_replays
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    echo -e " ${GREEN}[OK] Replays encontrados em:${RESET} $PASTA_ORIGEM"
-    echo -e " ${GREEN}[OK] Total de arquivos .bin:${RESET} $count"
+    echo -e " ${GREEN}[OK] Replays detectados em:${RESET} $ORIGEM_ENCONTRADA"
+    echo -e " ${GREEN}[OK] Total de arquivos .bin:${RESET} $COUNT"
 
-    echo -n -e "\n ${BOLD}${YELLOW}Digite o IP e Porta do celular sem root (ex: 192.168.0.5:43511): ${RESET}"
+    # 2. Pede o IP do celular secundario (sem root - recebe via adb shell,
+    #    que tem acesso suficiente para gravar em Android/data)
+    echo -n -e "\n ${BOLD}${YELLOW}Digite o IP e Porta do celular que vai RECEBER (ex: 192.168.0.5:43511): ${RESET}"
     read -r ALVO_IP < /dev/tty
 
     if [ -z "$ALVO_IP" ]; then
@@ -155,136 +273,103 @@ transferir_para_outro_celular() {
         return 1
     fi
 
-    echo -e "\n${GRAY} -> Conectando via ADB sem fio ($ALVO_IP)...${RESET}"
-    $ADB_BIN disconnect >/dev/null 2>&1
+    echo -e "\n${GRAY} -> Conectando ao celular alvo ($ALVO_IP)...${RESET}"
+    $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
     $ADB_BIN connect "$ALVO_IP"
     sleep 2
 
     if ! $ADB_BIN devices | grep -q "$ALVO_IP"; then
         echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Nao foi possivel conectar ao celular alvo via ADB."
-        echo -e " ${GRAY}Certifique-se de que a Depuracao sem fio / Brevent esta ativa no alvo.${RESET}"
+        echo -e " ${GRAY}Confira se a depuracao wireless esta ativa no aparelho dele e se o IP:porta estao corretos.${RESET}"
         rm -rf ./tmp_replays
         read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
         return 1
     fi
 
-    start_time=$(date +%s)
-
     if [ "$SUB_OPT" -eq 1 ]; then
-        DST_REMOTA="/sdcard/Android/data/com.dts.freefireth/files/MReplays"
-        VER="1.128.2"
-        TIPO_OP="Max -> Normal (Celular Secundario)"
+        PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
+        VERSAO_ALVO="1.123.15"
+        TIPO_OP="Replays -> Normal Dele"
     else
-        DST_REMOTA="/sdcard/Android/data/com.dts.freefiremax/files/MReplays"
-        VER="2.124.15"
-        TIPO_OP="Max -> Max (Celular Secundario)"
+        PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
+        VERSAO_ALVO="2.124.15"
+        TIPO_OP="Replays -> Max Dele"
     fi
 
-    echo -e "${GRAY} -> Atualizando versao nos arquivos JSON...${RESET}"
+    echo -e "${GRAY} -> Ajustando versao dos JSONs...${RESET}"
     for f in ./tmp_replays/*.json ./tmp_replays/*.JSON; do
         if [ -f "$f" ]; then
-            sed -i 's/"[Vv]ersion":"[^"]*"/"Version":"'"$VER"'"/' "$f" 2>/dev/null
+            sed -i 's/"[Vv]ersion":"[^"]*"/"Version":"'"$VERSAO_ALVO"'"/' "$f" 2>/dev/null
         fi
     done
 
-    echo -e "${GRAY} -> Enviando arquivos via ADB Push para o destino...${RESET}"
-    $ADB_BIN -s "$ALVO_IP" shell "mkdir -p $DST_REMOTA 2>/dev/null"
-    $ADB_BIN -s "$ALVO_IP" push ./tmp_replays/. "$DST_REMOTA/" 2>/dev/null
-
-    duration=$(( $(date +%s) - start_time ))
-    [ $duration -le 0 ] && duration=1
+    echo -e "${GRAY} -> Enviando arquivos para o celular alvo...${RESET}"
+    $ADB_BIN -s "$ALVO_IP" shell "mkdir -p $PASTA_REMOTA 2>/dev/null"
+    $ADB_BIN -s "$ALVO_IP" push ./tmp_replays/. "$PASTA_REMOTA/" 2>/dev/null
 
     BRAND=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
     MODEL=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.product.model" | tr -d '\r')
     ANDROID=$($ADB_BIN -s "$ALVO_IP" shell "getprop ro.build.version.release" | tr -d '\r')
     BATT=$($ADB_BIN -s "$ALVO_IP" shell "dumpsys battery | grep level | awk '{print \$2}'" | tr -d '\r')
-    FREE_STORAGE=$($ADB_BIN -s "$ALVO_IP" shell "df -h /data 2>/dev/null | awk 'NR==2 {print \$4}'" | tr -d '\r')
     NOW=$(date +"%d/%m/%Y %H:%M")
 
     rm -rf ./tmp_replays
 
     clear
     echo -e " "
-    echo -e "      ${BOLD}${WHITE}- REPLAY TOOL ($TIPO_OP)${RESET}"
+    echo -e "      ${BOLD}${WHITE}- REPLAY INTER-DEVICES ($TIPO_OP)${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e "  ${BOLD}RESUMO DA OPERACAO${RESET}"
     echo -e " "
-    echo -e "  Arquivos encontrados : ${WHITE}$count${RESET}"
-    echo -e "  Replays transferidos : ${WHITE}$count${RESET}"
-    echo -e "  Tempo de execucao    : ${WHITE}${duration}s${RESET}"
-    echo -e "  Data/Hora            : ${WHITE}$NOW${RESET}"
-    echo -e "  Status               : ${GREEN}CONCLUIDO VIA ADB${RESET}"
+    echo -e "  Origem dos arquivos : ${WHITE}$ORIGEM_ENCONTRADA${RESET}"
+    echo -e "  Replays encontrados : ${WHITE}$COUNT${RESET}"
+    echo -e "  Replays enviados    : ${WHITE}$COUNT${RESET}"
+    echo -e "  Celular Destino     : ${WHITE}$ALVO_IP${RESET}"
+    echo -e "  Data/Hora           : ${WHITE}$NOW${RESET}"
+    echo -e "  Status              : ${GREEN}ENVIADO COM SUCESSO${RESET}"
     echo -e " "
     echo -e "${GRAY}--------------------------------------------${RESET}"
-    echo -e "  ${BOLD}INFORMACOES DO DISPOSITIVO SECUNDARIO${RESET}"
+    echo -e "  ${BOLD}INFORMACOES DO CELULAR SECUNDARIO (ALVO)${RESET}"
     echo -e " "
-    echo -e "  Marca   : ${WHITE}$BRAND${RESET}"
-    echo -e "  Modelo  : ${WHITE}$MODEL${RESET}"
-    echo -e "  Android : ${WHITE}$ANDROID${RESET}"
-    echo -e "  Bateria : ${WHITE}${BATT}%${RESET}"
-    echo -e "  Espaco  : ${WHITE}${FREE_STORAGE}B livre${RESET}"
+    echo -e "  Marca               : ${WHITE}$BRAND${RESET}"
+    echo -e "  Modelo              : ${WHITE}$MODEL${RESET}"
+    echo -e "  Versao Android      : ${WHITE}$ANDROID${RESET}"
+    echo -e "  Nivel da Bateria    : ${WHITE}${BATT}%${RESET}"
     echo -e "${GRAY}--------------------------------------------${RESET}"
     echo -e " "
     echo -e "  ${BOLD}yAshinDev${RESET}"
     echo -e " "
-    
+
     $ADB_BIN disconnect "$ALVO_IP" >/dev/null 2>&1
     read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
 }
 
-# --- FUNÇÃO 3: ABRIR ADB SHELL DO SEGUNDO CELULAR ---
-abrir_terminal_remoto() {
-    clear
-    echo -e "${BLUE}==============================================${RESET}"
-    echo -e "        ${BOLD}${WHITE}ACESSAR TERMINAL DO OUTRO CELULAR${RESET}"
-    echo -e "${BLUE}==============================================${RESET}"
-    echo -n -e " ${BOLD}${YELLOW}Digite o IP e Porta do celular secundario: ${RESET}"
-    read -r ALVO_IP < /dev/tty
-
-    if [ -z "$ALVO_IP" ]; then
-        echo -e "\n${BOLD}${WHITE}[!] IP invalido.${RESET}"
-        sleep 2
-        return 1
-    fi
-
-    echo -e "\n${GRAY} -> Conectando...${RESET}"
-    $ADB_BIN disconnect >/dev/null 2>&1
-    $ADB_BIN connect "$ALVO_IP"
-    sleep 2
-
-    if $ADB_BIN devices | grep -q "$ALVO_IP"; then
-        echo -e "\n${GREEN}[OK] Conectado com sucesso! Entrando no ADB Shell...${RESET}"
-        echo -e "${GRAY}Digite 'exit' para sair do celular remoto.${RESET}\n"
-        $ADB_BIN -s "$ALVO_IP" shell
-    else
-        echo -e "\n${BOLD}${WHITE}[!] ERRO:${RESET} Falha ao conectar no dispositivo."
-        read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
-    fi
-}
-
-# --- LOOP MENU PRINCIPAL ---
+# --- LOOP DO MENU PRINCIPAL ---
 while true; do
     clear
     echo -e "${BLUE}==============================================${RESET}"
     echo -e " ${BOLD}${GREEN}PASSADOR DE REPLAY BY yAshinDev${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e " ${BOLD}${YELLOW}MODO LOCAL:${RESET} ROOT ATIVO"
-    echo -e " ${BOLD}${YELLOW}MODO REMOTO:${RESET} ADB WIRELESS / BREVENT"
-    echo -e " ${BOLD}${YELLOW}VERSAO ALVO:${RESET} 1.128.2"
+    echo -e " ${BOLD}${YELLOW}MODO DE BUSCA:${RESET} Automatica (root -> adb pull, Downloads / FF / FF Max)"
+    echo -e " ${BOLD}${YELLOW}VERSAO FF MAX:${RESET} 2.124.15"
+    echo -e " ${BOLD}${YELLOW}VERSAO FF:${RESET} 1.123.15"
     echo -e "${BLUE}==============================================${RESET}"
-    echo -e " ${BLUE}[ 1 ]${RESET} ${WHITE}TRANSFERIR LOCAL (Max -> Normal no seu celular)${RESET}"
-    echo -e " ${BLUE}[ 2 ]${RESET} ${WHITE}ENVIAR REPLAYS PARA OUTRO CELULAR (Sem Root)${RESET}"
-    echo -e " ${BLUE}[ 3 ]${RESET} ${WHITE}ABRIR ADB SHELL DO OUTRO CELULAR${RESET}"
+    echo -e " ${BLUE}[ 1 ]${RESET} ${WHITE}ENVIAR REPLAYS PARA FF NORMAL (Local)${RESET}"
+    echo -e " ${BLUE}[ 2 ]${RESET} ${WHITE}ENVIAR REPLAYS PARA FF MAX (Local)${RESET}"
+    echo -e " ${BLUE}[ 3 ]${RESET} ${WHITE}PASSAR PARA OUTRO CELULAR (Rede/Wireless)${RESET}"
     echo -e " ${BLUE}[ 4 ]${RESET} ${WHITE}SAIR DO MENU${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
     echo -n -e " ${BOLD}${WHITE}> ${RESET}"
-    
+
     read -r OPTION < /dev/tty
 
     case "$OPTION" in
         1) transferir_local ;;
-        2) transferir_para_outro_celular ;;
-        3) abrir_terminal_remoto ;;
+        2)
+            echo -e "\n${YELLOW}Opcao em desenvolvimento!${RESET}"
+            read -n 1 -s -r -p "Pressione qualquer tecla para voltar..." < /dev/tty
+            ;;
+        3) transferir_para_outro_celular ;;
         4)
             echo -e "\n${WHITE}Saindo... Obrigado por usar a suite yAshinDev!${RESET}"
             exit 0
