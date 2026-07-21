@@ -140,7 +140,7 @@ transferir_local() {
     $ADB_BIN -s "$LOCAL_DEV" shell "mkdir -p $PASTA_DESTINO 2>/dev/null"
     $ADB_BIN -s "$LOCAL_DEV" push ./tmp_replays/. "$PASTA_DESTINO/" 2>/dev/null
 
-    $ADB_BIN -s "$LOCAL_DEV" shell "for f in $PASTA_DESTINO/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.123.15\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
+    $ADB_BIN -s "$LOCAL_DEV" shell "for f in $PASTA_DESTINO/*.json; do if [ -f \"\$f\" ]; then sed 's/\"[Vv]ersion\":\"[^\"]*\"/\"Version\":\"1.128.2\"/' \"\$f\" > \"\$f.tmp\" && mv -f \"\$f.tmp\" \"\$f\"; fi; done 2>/dev/null"
 
     COUNT=$(find ./tmp_replays -iname "*.bin" 2>/dev/null | wc -l)
     BRAND=$($ADB_BIN -s "$LOCAL_DEV" shell "getprop ro.product.brand" | tr -d '\r' | tr '[:lower:]' '[:upper:]')
@@ -249,11 +249,11 @@ transferir_para_outro_celular() {
 
     if [ "$SUB_OPT" -eq 1 ]; then
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefireth/files/MReplays"
-        VERSAO_ALVO="1.123.15"
+        VERSAO_ALVO="1.128.2"
         TIPO_OP="Replays -> Normal Dele"
     else
         PASTA_REMOTA="/storage/emulated/0/Android/data/com.dts.freefiremax/files/MReplays"
-        VERSAO_ALVO="2.124.15"
+        VERSAO_ALVO="2.126.1"
         TIPO_OP="Replays -> Max Dele"
     fi
 
@@ -312,8 +312,8 @@ while true; do
     echo -e " ${BOLD}${GREEN}PASSADOR DE REPLAY BY yAshinDev${RESET}"
     echo -e "${BLUE}==============================================${RESET}"
     echo -e " ${BOLD}${YELLOW}MODO DE BUSCA:${RESET} Automatica via ROOT (Downloads / FF / FF Max)"
-    echo -e " ${BOLD}${YELLOW}VERSAO FF MAX:${RESET} 2.124.15"
-    echo -e " ${BOLD}${YELLOW}VERSAO FF:${RESET} 1.123.15"
+    echo -e " ${BOLD}${YELLOW}VERSAO FF MAX:${RESET} 2.126.1"
+    echo -e " ${BOLD}${YELLOW}VERSAO FF:${RESET} 1.128.2"
     echo -e "${BLUE}==============================================${RESET}"
     echo -e " ${BLUE}[ 1 ]${RESET} ${WHITE}ENVIAR REPLAYS PARA FF NORMAL (Local)${RESET}"
     echo -e " ${BLUE}[ 2 ]${RESET} ${WHITE}ENVIAR REPLAYS PARA FF MAX (Local)${RESET}"
