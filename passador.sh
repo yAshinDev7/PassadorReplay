@@ -228,8 +228,8 @@ preparar_stage() {
         return 1
     fi
 
-    su -c "cp -f '$src'/*.bin '$STAGE_DIR'/ 2>/dev/null"
-    su -c "cp -f '$src'/*.json '$STAGE_DIR'/ 2>/dev/null"
+    su -c "find '$src' -type f -iname '*.bin' -exec cp -f {} '$STAGE_DIR'/ \;" 2>/dev/null
+    su -c "find '$src' -type f -iname '*.json' -exec cp -f {} '$STAGE_DIR'/ \;" 2>/dev/null
     # garante que o Termux (uid proprio, sem root) consiga ler/mover depois
     su -c "chmod -R 777 '$STAGE_DIR'" 2>/dev/null
 
